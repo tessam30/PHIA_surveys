@@ -1,0 +1,17 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+Data
+.DS_Store
+*.twbr
+*.twb
+*.twbx
+*.xlsx
+*.csv
+*.xls
+*.dta
+*.rds
+
+
