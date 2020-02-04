@@ -9,7 +9,7 @@
 # Package load and path finding -------------------------------------------
 
 pacman::p_load("survey", "tidyverse", "haven", "foreign", "srvyr", "tidylog", "broom", "labelled",
-               "scales")
+               "scales", "RColorBrewer")
 
 # Path where data live for now -- not synched for obvious reasons
 PHIApath <- '~/Documents/Github/PHIA_data/UPHIA data/UPHIA 2016-2017 Dissemination Package v1.0 20190605/'
