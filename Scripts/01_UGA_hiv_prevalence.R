@@ -24,6 +24,8 @@ hhinfo <- read_dta(file.path(PHIApath, "Uphia2016hh.dta")) %>%
 adultbio <- read_dta(file.path(PHIApath, "Uphia2016adultbio.dta")) %>% 
   left_join(., hhinfo, by = "householdid")
 
+adultchar <- read_dta(file.path(PHIApath, "Uphia2016adultind.dta"))
+
 
 # Function setup ----------------------------------------------------------
 # Convert 2s to 0 and 99s to NAs for summary statistics and regressions
@@ -54,7 +56,11 @@ age_gend_labels <- c(
   )
 
 male="#1FC3AA"
+male2 = "#6CA18F"
 female="#8624F5"
+female2 = "#D9812C"
+
+source = c("Source: 2016/17 Uganda Population-Based HIV Impact Survey (UPHIA).")
 
 # Explore data ------------------------------------------------------------
 
@@ -118,7 +124,12 @@ adultbio_svy <-
   group_by(gender, agecat) %>% 
   mutate(gender_age = group_indices()) %>% 
   ungroup() %>% 
-  select(gender_age, age_group5, everything())
+  select(gender_age, age_group5, everything()) 
+
+
+
+
+
 
 
 
@@ -161,33 +172,77 @@ natl_ave <- uga_adults %>%
 uga_adults %>% 
   group_by(region) %>% #stratifying summary stats on region
   filter(gender == 2 & age>= 15 & age <= 49) %>%   
-  summarise(hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci"))
+  summarise(hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci"),
+            n = unweighted(n()))
 
 
 
 # Look at the prevalence by male / female across large age swaths
-uga_adults %>% 
+hiv_prev <- uga_adults %>% 
   group_by(agecat, gender, region_labs) %>% 
-  summarise(hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci")) %>%
+  summarise(hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci"),
+            n = unweighted(n()))
+  
+  # Plot the results in a dot plot with ci's
+hiv_prev %>% 
   ggplot(., aes(x = hvi_prev, y = agecat, color = factor(gender), fill = factor(gender))) +
   geom_vline(xintercept = natl_ave, colour = llamar::grey10K, size = 2) +
   geom_segment(aes(x = hvi_prev_low, xend = hvi_prev_upp, y = agecat, yend = agecat)) +
-  geom_point(size = 3, shape = 21, colour = "white", stroke = 2) +
-  scale_colour_manual(values = c("1" = male, "2" = female), name = '',
+  geom_point(size = 3, shape = 21, colour = "white", stroke = 1) +
+    ggrepel::geom_text_repel(aes(label = n, colour = factor(gender)), size = 2, 
+                             segment.color = NA, vjust = 0, force = 5 ) +
+  scale_colour_manual(values = c("1" = male2, "2" = female2), name = '',
                       labels = c("male", "female")) +
-  scale_fill_manual(values = c("1" = male, "2" = female), name = '',
+  scale_fill_manual(values = c("1" = male2, "2" = female2), name = '',
                     labels = c("male", "female")) +
   scale_x_continuous(labels = percent) +
-  facet_wrap(~region_labs) +
+  facet_wrap(~region_labs, nrow = 2) +
   theme_minimal() +
   theme(legend.position = "top",
         legend.justification='left',
         panel.spacing = unit(2, "lines"),
         strip.text = element_text(hjust = 0)) + 
   labs(x = "", y = "", 
-       title = "20-30 year old men and womend have large differences in HIV prevalence",
-       subtitle = "Gray line represents national average ~ 6.7%")
+       title = "20-30 year old men and women have large differences in HIV prevalence",
+       subtitle = "Gray line represents national average ~ 6.7%. Numbers below estimate indicate sample size.",
+       source = source)
 
 
 
+# Regression munging ------------------------------------------------------
+
+# Risk factors for logistic regression
+# •	having an HIV-positive family member in the household
+# •	being a single or double orphan
+# X	being a head of household 
+# X	having first sexual experience before age 15
+# X	number of sexual partners in the last 12 months (having two or more partners as a risk factor)
+# •	ever attended school or missed school days (or being out of school, for those aged 9-17)
+# X	level of education
+# •	knowledge about HIV prevention
+# X	experience of intimate partner violence or other types of violence (sexual, physical, emotional)
+# •	feel pressured by friends to have sex
+# X	condom use at last sex with a non-marital, non-cohabitating partner
+# X	number of sexual partners in the last 12 months (having two or more partners as a risk factor)
+# •	engaging in transactional sex
+# •	alcohol or drug use
+# •	experienced pregnancy in adolescence (aged 9-19)
+# •	presence of an STI
+# X	marital status
+# X	residence (rural, urban)
+# •	unmarried AGYW who had sex
+
+
+adultchar_reg <- 
+  adultchar %>% 
+  mutate(hoh = ifelse(relattohh == 1, 1, 0),
+         educ = educationuganda,
+         married = ifelse(hhrmarital == 1, 1, 0),
+         urban = ifelse(urban == 1, 1, 0), 
+         firstsx_und15 = ifelse(firstsxage < 15, 1, 0),
+         sx_partners_last12 = part12monum,
+         cdm_lst_sex = condomlastnonmaritalsex12months,
+         sx_violencepart_12mo = sexualviolencepart12mo,
+         phys_violencepat_12mo = physicalviolencepart12mo)
+  
 
