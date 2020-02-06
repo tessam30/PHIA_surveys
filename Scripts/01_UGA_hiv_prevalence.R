@@ -6,22 +6,24 @@
 ############################################################
 
 
-# Package load and path finding -------------------------------------------
+# Package load and path finding for analysis -------------------------------------------
 
-pacman::p_load("survey", "tidyverse", "haven", "foreign", "srvyr", "tidylog", "broom", "labelled",
-               "scales", "RColorBrewer")
+pacman::p_load(
+  "survey", "tidyverse", "haven", "foreign", "srvyr", "tidylog", "broom", "labelled",
+  "scales", "RColorBrewer"
+)
 
 # Path where data live for now -- not synched for obvious reasons
-PHIApath <- '~/Documents/Github/PHIA_data/UPHIA data/UPHIA 2016-2017 Dissemination Package v1.0 20190605/'
+PHIApath <- "~/Documents/Github/PHIA_data/UPHIA data/UPHIA 2016-2017 Dissemination Package v1.0 20190605/"
 
 # What are we looking at here? Showing Stata files for comparison
 list.files(file.path(PHIApath), pattern = ".dta")
 
-hhinfo <- read_dta(file.path(PHIApath, "Uphia2016hh.dta")) %>% 
+hhinfo <- read_dta(file.path(PHIApath, "Uphia2016hh.dta")) %>%
   select(householdid, region)
 
 # load adult bio data for producing prevalance estimates & join in HH info needed for analysis
-adultbio <- read_dta(file.path(PHIApath, "Uphia2016adultbio.dta")) %>% 
+adultbio <- read_dta(file.path(PHIApath, "Uphia2016adultbio.dta")) %>%
   left_join(., hhinfo, by = "householdid")
 
 adultchar <- read_dta(file.path(PHIApath, "Uphia2016adultind.dta"))
@@ -30,12 +32,12 @@ adultchar <- read_dta(file.path(PHIApath, "Uphia2016adultind.dta"))
 # Function setup ----------------------------------------------------------
 # Convert 2s to 0 and 99s to NAs for summary statistics and regressions
 two_to_zero <- function(x) {
-  ifelse(x == 2, 0, x) 
+  ifelse(x == 2, 0, x)
 }
 
 nn_to_nas <- function(x) {
   ifelse(x == 99, NA, x)
-} 
+}
 
 # labels age / gender breakdown
 age_gend_labels <- c(
@@ -53,78 +55,88 @@ age_gend_labels <- c(
   "35-39 F",
   "40-49 F",
   "50+ F"
-  )
+)
 
-male="#1FC3AA"
-male2 = "#6CA18F"
-female="#8624F5"
-female2 = "#D9812C"
+# Colors for male/female plots -- avoiding pink/blues per guidelines
+male <- "#1FC3AA"
+male2 <- "#6CA18F"
+female <- "#8624F5"
+female2 <- "#D9812C"
 
-source = c("Source: 2016/17 Uganda Population-Based HIV Impact Survey (UPHIA).")
+sex_clrs = c("1" = "#6CA18F", "2" = "#D9812C")
+sex_labels = c("male", "female")
+
+scales::show_col(cbind(male, male2, female, female2), borders = NA)
+
+source <- c("Source: 2016/17 Uganda Population-Based HIV Impact Survey (UPHIA).")
 
 # Explore data ------------------------------------------------------------
 
-adultbio %>% select(-contains("btwt")) %>% names()
+adultbio %>%
+  select(-contains("btwt")) %>%
+  names()
 
 # Check the cross-tabulations of the hivstatus variable to figure out filters (99s) needed for stats
-adultbio %>% 
-  select(hivstatusfinal) %>% 
-  mutate(hivstatusfinal = two_to_zero(hivstatusfinal)) %>% 
+adultbio %>%
+  select(hivstatusfinal) %>%
+  mutate(hivstatusfinal = two_to_zero(hivstatusfinal)) %>%
   table()
 
 # Look at the key indicators full information
-adultbio %>% 
-  select_at(vars(hivstatusfinal, aware, art, vls)) %>% 
+adultbio %>%
+  select_at(vars(hivstatusfinal, aware, art, vls)) %>%
   Hmisc::describe()
 
 # What do tabulations look like after modifications to account for 99s
 adultbio %>%
-  select_at(vars(hivstatusfinal, aware, art, vls)) %>% 
-  mutate_all(., ~two_to_zero(.)) %>%
-  mutate_all(., ~nn_to_nas(.)) %>% 
-  purrr::map(~tidy(summary(.x))) %>% 
-  do.call(rbind, .) 
+  select_at(vars(hivstatusfinal, aware, art, vls)) %>%
+  mutate_all(., ~ two_to_zero(.)) %>%
+  mutate_all(., ~ nn_to_nas(.)) %>%
+  purrr::map(~ tidy(summary(.x))) %>%
+  do.call(rbind, .)
 
 
 
 
 # Fix 2s to zero for major variables of interest
-adultbio_svy <- 
-  adultbio %>% 
+adultbio_svy <-
+  adultbio %>%
   mutate_at(vars(hivstatusfinal, aware, art, vls), list(recode = two_to_zero)) %>%
-  mutate_at(vars(hivstatusfinal, aware, art, vls), list(nn_to_nas)) %>% 
+  mutate_at(vars(hivstatusfinal, aware, art, vls), list(nn_to_nas)) %>%
   # generate age categories as you need
-  mutate(agecat = case_when(
-    age <= 19 ~ "15-19",
-    age >=20 & age <= 24 ~ "20-24",
-    age >=25 & age <= 29 ~ "25-29",
-    age >=30 & age <= 34 ~ "30-34",
-    age >=35 & age <= 39 ~ "35-39",
-    age >=40 & age <= 49 ~ "40-49",
-    TRUE ~ "50 plus"
-  ),
-  # Flagging all values that are 99 for hiv status
-  hiv_miss_flag = ifelse(hivstatusfinal == 99, 1, 0),
-  age_group5 = cut(age, c(15, 19, 24, 29, 34, 39, 49, 99), include.lowest = TRUE),
-  age_15_24 = cut(age, c(15, 24, 99), include.lowest = TRUE),
-  region_labs = case_when(
-    region == 1 ~ "Central1",
-    region == 2 ~ "Central2",
-    region == 3 ~ "Kampala",
-    region == 4 ~ "East Central",
-    region == 5 ~ "Mid~East",
-    region == 6 ~ "North East",
-    region == 7 ~ "West Nile",
-    region == 8 ~ "Mid~North",
-    region == 9 ~ "Mid~West",
-    region == 10 ~ "South West"
-  )) %>%  
-  
-  #Create age / sex groups based on index values (1 - 7 men + age, 8 -14 female + age)
-  group_by(gender, agecat) %>% 
-  mutate(gender_age = group_indices()) %>% 
-  ungroup() %>% 
-  select(gender_age, age_group5, everything()) 
+  mutate(
+    agecat = case_when(
+      age <= 19 ~ "15-19",
+      age >= 20 & age <= 24 ~ "20-24",
+      age >= 25 & age <= 29 ~ "25-29",
+      age >= 30 & age <= 34 ~ "30-34",
+      age >= 35 & age <= 39 ~ "35-39",
+      age >= 40 & age <= 49 ~ "40-49",
+      TRUE ~ "50 plus"
+    ),
+    # Flagging all values that are 99 for hiv status
+    hiv_miss_flag = ifelse(hivstatusfinal == 99, 1, 0),
+    age_group5 = cut(age, c(15, 19, 24, 29, 34, 39, 49, 99), include.lowest = TRUE),
+    age_15_24 = cut(age, c(15, 24, 99), include.lowest = TRUE),
+    region_labs = case_when(
+      region == 1 ~ "Central1",
+      region == 2 ~ "Central2",
+      region == 3 ~ "Kampala",
+      region == 4 ~ "East Central",
+      region == 5 ~ "Mid~East",
+      region == 6 ~ "North East",
+      region == 7 ~ "West Nile",
+      region == 8 ~ "Mid~North",
+      region == 9 ~ "Mid~West",
+      region == 10 ~ "South West"
+    )
+  ) %>%
+
+  # Create age / sex groups based on index values (1 - 7 men + age, 8 -14 female + age)
+  group_by(gender, agecat) %>%
+  mutate(gender_age = group_indices()) %>%
+  ungroup() %>%
+  select(gender_age, age_group5, everything())
 
 
 
@@ -137,24 +149,28 @@ adultbio_svy <-
 
 # Declare data to be survey set
 # Check if any observations are missing weights
-adultbio_svy %>% filter(is.na(varunit)) %>% count() # 570 missing weights -- not good
+adultbio_svy %>%
+  filter(is.na(varunit)) %>%
+  count() # 570 missing weights -- not good
 
-
-phia_svyset <-svydesign(id = ~varunit, strata = ~varstrat,  weights = ~btwt0, 
-                            data = adultbio_svy %>% filter(!is.na(varunit) & hiv_miss_flag == 0) , 
-                            nest = TRUE)
+phia_svyset <- svydesign(
+  id = ~varunit, strata = ~varstrat, weights = ~btwt0,
+  data = adultbio_svy %>% filter(!is.na(varunit) & hiv_miss_flag == 0),
+  nest = TRUE
+)
 summary(phia_svyset)
 
-# Estimate hiv status
+# Demonstrate old way for estimating stats
 (res <- svyciprop(~hivstatusfinal_recode,
-                 design = phia_svyset,
-                 method="mean", level=0.95))
+  design = phia_svyset,
+  method = "mean", level = 0.95
+))
 
-(c(res[[1]],attr(res,"ci"))) # display results
+(c(res[[1]], attr(res, "ci"))) # display results
 table(phia_svyset$variables$hivstatusfinal_recode)
 
-# What is the status across all adults by region?
-svyby(~hivstatusfinal_recode, ~region, phia_svyset, svymean)
+# What is the status across all adults by region? This was the question asked.
+svyby(~hivstatusfinal_recode, ~region_labs, phia_svyset, svymean)
 
 
 # New way with the srvyr package that fits within tidyverse ---------------
@@ -162,59 +178,74 @@ svyby(~hivstatusfinal_recode, ~region, phia_svyset, svymean)
 # See here for the update on srvyr
 # https://cran.r-project.org/web/packages/srvyr/vignettes/srvyr-vs-survey.html
 
-uga_adults <- adultbio_svy %>% 
-  filter(!is.na(varunit) & hiv_miss_flag == 0) %>% #exclude missing weights and flagged hiv
-  as_survey_design(id = varunit, strata = varstrat,  weights = btwt0, nest = TRUE) #declare data svyset
+uga_adults <- adultbio_svy %>%
+  filter(!is.na(varunit) & hiv_miss_flag == 0) %>% # exclude missing weights and flagged hiv
+  as_survey_design(id = varunit, strata = varstrat, weights = btwt0, nest = TRUE) # declare data svyset
 
-natl_ave <- uga_adults %>% 
-  summarise(hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci")) %>% pull()
+natl_ave <- uga_adults %>%
+  summarise(hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci")) %>%
+  pull()
 
-uga_adults %>% 
-  group_by(region) %>% #stratifying summary stats on region
-  filter(gender == 2 & age>= 15 & age <= 49) %>%   
-  summarise(hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci"),
-            n = unweighted(n()))
+uga_adults %>%
+  group_by(region) %>% # stratifying summary stats on region
+  filter(gender == 2 & age >= 15 & age <= 49) %>%
+  summarise(
+    hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci"),
+    n = unweighted(n())
+  )
 
 
 
 # Look at the prevalence by male / female across large age swaths
-hiv_prev <- uga_adults %>% 
-  group_by(agecat, gender, region_labs) %>% 
-  summarise(hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci"),
-            n = unweighted(n()))
-  
-  # Plot the results in a dot plot with ci's
-hiv_prev %>% 
+hiv_prev <- uga_adults %>%
+  group_by(agecat, gender, region_labs) %>%
+  summarise(
+    hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci"),
+    n = unweighted(n())
+  )
+
+# Plot the results in a dot plot with ci's to show variation adn sample sizes
+hiv_prev %>%
   ggplot(., aes(x = hvi_prev, y = agecat, color = factor(gender), fill = factor(gender))) +
   geom_vline(xintercept = natl_ave, colour = llamar::grey10K, size = 2) +
   geom_segment(aes(x = hvi_prev_low, xend = hvi_prev_upp, y = agecat, yend = agecat)) +
   geom_point(size = 3, shape = 21, colour = "white", stroke = 1) +
-    ggrepel::geom_text_repel(aes(label = n, colour = factor(gender)), size = 2, 
-                             segment.color = NA, vjust = 0, force = 5 ) +
-  scale_colour_manual(values = c("1" = male2, "2" = female2), name = '',
-                      labels = c("male", "female")) +
-  scale_fill_manual(values = c("1" = male2, "2" = female2), name = '',
-                    labels = c("male", "female")) +
+  ggrepel::geom_text_repel(aes(label = n, colour = factor(gender)),
+    size = 2,
+    segment.color = NA, vjust = 0, force = 5
+  ) +
+  scale_colour_manual(
+    values = sex_clrs, name = "",
+    labels = sex_labels
+  ) +
+  scale_fill_manual(
+    values = sex_clrs, name = "",
+    labels = sex_labels
+  ) +
   scale_x_continuous(labels = percent) +
   facet_wrap(~region_labs, nrow = 2) +
   theme_minimal() +
-  theme(legend.position = "top",
-        legend.justification='left',
-        panel.spacing = unit(2, "lines"),
-        strip.text = element_text(hjust = 0)) + 
-  labs(x = "", y = "", 
-       title = "20-30 year old men and women have large differences in HIV prevalence",
-       subtitle = "Gray line represents national average ~ 6.7%. Numbers below estimate indicate sample size.",
-       source = source)
+  theme(
+    legend.position = "top",
+    legend.justification = "left",
+    panel.spacing = unit(2, "lines"),
+    strip.text = element_text(hjust = 0)
+  ) +
+  labs(
+    x = "", y = "",
+    title = "20-30 year old men and women have large differences in HIV prevalence",
+    subtitle = "Gray line represents national average ~ 6.7%. Numbers below estimate indicate sample size.",
+    source = source
+  )
 
 
 
-# Regression munging ------------------------------------------------------
+# Regression munging per request ------------------------------------------------------
 
 # Risk factors for logistic regression
 # •	having an HIV-positive family member in the household
 # •	being a single or double orphan
-# X	being a head of household 
+# X	being a head of household
 # X	having first sexual experience before age 15
 # X	number of sexual partners in the last 12 months (having two or more partners as a risk factor)
 # •	ever attended school or missed school days (or being out of school, for those aged 9-17)
@@ -233,16 +264,16 @@ hiv_prev %>%
 # •	unmarried AGYW who had sex
 
 
-adultchar_reg <- 
-  adultchar %>% 
-  mutate(hoh = ifelse(relattohh == 1, 1, 0),
-         educ = educationuganda,
-         married = ifelse(hhrmarital == 1, 1, 0),
-         urban = ifelse(urban == 1, 1, 0), 
-         firstsx_und15 = ifelse(firstsxage < 15, 1, 0),
-         sx_partners_last12 = part12monum,
-         cdm_lst_sex = condomlastnonmaritalsex12months,
-         sx_violencepart_12mo = sexualviolencepart12mo,
-         phys_violencepat_12mo = physicalviolencepart12mo)
-  
-
+adultchar_reg <-
+  adultchar %>%
+  mutate(
+    hoh = ifelse(relattohh == 1, 1, 0),
+    educ = educationuganda,
+    married = ifelse(hhrmarital == 1, 1, 0),
+    urban = ifelse(urban == 1, 1, 0),
+    firstsx_und15 = ifelse(firstsxage < 15, 1, 0),
+    sx_partners_last12 = part12monum,
+    cdm_lst_sex = condomlastnonmaritalsex12months,
+    sx_violencepart_12mo = sexualviolencepart12mo,
+    phys_violencepat_12mo = physicalviolencepart12mo
+  )
