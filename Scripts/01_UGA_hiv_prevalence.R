@@ -68,7 +68,7 @@ sex_labels = c("male", "female")
 
 scales::show_col(cbind(male, male2, female, female2), borders = NA)
 
-source <- c("Source: 2016/17 Uganda Population-Based HIV Impact Survey (UPHIA).")
+datasource <- c("Source: 2016/17 Uganda Population-Based HIV Impact Survey (UPHIA).")
 
 # Explore data ------------------------------------------------------------
 
@@ -89,20 +89,18 @@ adultbio %>%
 
 # What do tabulations look like after modifications to account for 99s
 adultbio %>%
-  select_at(vars(hivstatusfinal, aware, art, vls)) %>%
+  select_at(vars(hivstatusfinal, aware, art, vls, activesyphilis)) %>%
   mutate_all(., ~ two_to_zero(.)) %>%
   mutate_all(., ~ nn_to_nas(.)) %>%
   purrr::map(~ tidy(summary(.x))) %>%
   do.call(rbind, .)
 
 
-
-
 # Fix 2s to zero for major variables of interest
 adultbio_svy <-
   adultbio %>%
-  mutate_at(vars(hivstatusfinal, aware, art, vls), list(recode = two_to_zero)) %>%
-  mutate_at(vars(hivstatusfinal, aware, art, vls), list(nn_to_nas)) %>%
+  mutate_at(vars(hivstatusfinal, aware, art, vls, activesyphilis), list(recode = two_to_zero)) %>%
+  mutate_at(vars(hivstatusfinal, aware, art, vls, activesyphilis), list(nn_to_nas)) %>%
   # generate age categories as you need
   mutate(
     agecat = case_when(
@@ -180,6 +178,7 @@ svyby(~hivstatusfinal_recode, ~region_labs, phia_svyset, svymean)
 
 uga_adults <- adultbio_svy %>%
   filter(!is.na(varunit) & hiv_miss_flag == 0) %>% # exclude missing weights and flagged hiv
+  #filter(!is.na(varunit)) %>% 
   as_survey_design(id = varunit, strata = varstrat, weights = btwt0, nest = TRUE) # declare data svyset
 
 natl_ave <- uga_adults %>%
@@ -198,14 +197,14 @@ uga_adults %>%
 
 # Look at the prevalence by male / female across large age swaths
 hiv_prev <- uga_adults %>%
-  group_by(agecat, gender, region_labs) %>%
+  group_by(agecat, gender, region_labs, age_15_24) %>%
   summarise(
     hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci"),
     n = unweighted(n())
   )
 
 # Plot the results in a dot plot with ci's to show variation adn sample sizes
-hiv_prev %>%
+hiv_prev %>% filter(age_15_24 == "[15,24]") %>% 
   ggplot(., aes(x = hvi_prev, y = agecat, color = factor(gender), fill = factor(gender))) +
   geom_vline(xintercept = natl_ave, colour = llamar::grey10K, size = 2) +
   geom_segment(aes(x = hvi_prev_low, xend = hvi_prev_upp, y = agecat, yend = agecat)) +
@@ -233,9 +232,9 @@ hiv_prev %>%
   ) +
   labs(
     x = "", y = "",
-    title = "20-30 year old men and women have large differences in HIV prevalence",
-    subtitle = "Gray line represents national average ~ 6.7%. Numbers below estimate indicate sample size.",
-    source = source
+    title = "15 - 24 year HIV prevalence for Uganda",
+    subtitle = str_c("Gray line represents national average ~", round(natl_ave*100, 1), "%. Numbers below estimate indicate sample size."),
+    caption = datasource
   )
 
 
