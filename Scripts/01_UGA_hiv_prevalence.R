@@ -1,16 +1,16 @@
-############################################################
+# ******************************************************
 # Purpose: Generate Uganda Estimate for HIV Incidence
 # Author: Tim Essam, USAID OHA/SIEI/SI
 # Date: 2020_01_29
 # Notes: For UGA COP planning
-############################################################
+# ******************************************************
 
 
 # Package load and path finding for analysis -------------------------------------------
 
 pacman::p_load(
   "survey", "tidyverse", "haven", "foreign", "srvyr", "tidylog", "broom", "labelled",
-  "scales", "RColorBrewer"
+  "scales", "RColorBrewer", "janitor"
 )
 
 # Path where data live for now -- not synched for obvious reasons
@@ -27,6 +27,8 @@ adultbio <- read_dta(file.path(PHIApath, "Uphia2016adultbio.dta")) %>%
   left_join(., hhinfo, by = "householdid")
 
 adultchar <- read_dta(file.path(PHIApath, "Uphia2016adultind.dta"))
+
+hhchar <- read_dta(file.path(PHIApath, "Uphia2016hh.dta"))
 
 
 # Function setup ----------------------------------------------------------
@@ -137,12 +139,6 @@ adultbio_svy <-
   select(gender_age, age_group5, everything())
 
 
-
-
-
-
-
-
 # Old way of doing things with the survey package -------------------------
 
 # Declare data to be survey set
@@ -239,40 +235,3 @@ hiv_prev %>% filter(age_15_24 == "[15,24]") %>%
 
 
 
-# Regression munging per request ------------------------------------------------------
-
-# Risk factors for logistic regression
-# •	having an HIV-positive family member in the household
-# •	being a single or double orphan
-# X	being a head of household
-# X	having first sexual experience before age 15
-# X	number of sexual partners in the last 12 months (having two or more partners as a risk factor)
-# •	ever attended school or missed school days (or being out of school, for those aged 9-17)
-# X	level of education
-# •	knowledge about HIV prevention
-# X	experience of intimate partner violence or other types of violence (sexual, physical, emotional)
-# •	feel pressured by friends to have sex
-# X	condom use at last sex with a non-marital, non-cohabitating partner
-# X	number of sexual partners in the last 12 months (having two or more partners as a risk factor)
-# •	engaging in transactional sex
-# •	alcohol or drug use
-# •	experienced pregnancy in adolescence (aged 9-19)
-# •	presence of an STI
-# X	marital status
-# X	residence (rural, urban)
-# •	unmarried AGYW who had sex
-
-
-adultchar_reg <-
-  adultchar %>%
-  mutate(
-    hoh = ifelse(relattohh == 1, 1, 0),
-    educ = educationuganda,
-    married = ifelse(hhrmarital == 1, 1, 0),
-    urban = ifelse(urban == 1, 1, 0),
-    firstsx_und15 = ifelse(firstsxage < 15, 1, 0),
-    sx_partners_last12 = part12monum,
-    cdm_lst_sex = condomlastnonmaritalsex12months,
-    sx_violencepart_12mo = sexualviolencepart12mo,
-    phys_violencepat_12mo = physicalviolencepart12mo
-  )
