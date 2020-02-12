@@ -16,6 +16,7 @@ map(folder_list, ~dir.create(.))
 
 datapath <- "Data"
 dataout <- "Dataout"
+scriptspath <- "Scripts"
 gispath <- "GIS"
 graphpath <- "Graphics"
 imagepath <- "Images"

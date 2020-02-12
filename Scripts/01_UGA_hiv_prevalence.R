@@ -17,18 +17,18 @@ pacman::p_load(
 PHIApath <- "~/Documents/Github/PHIA_data/UPHIA data/UPHIA 2016-2017 Dissemination Package v1.0 20190605/"
 
 # What are we looking at here? Showing Stata files for comparison
-list.files(file.path(PHIApath), pattern = ".dta")
+uphia_dtas <- list.files(file.path(PHIApath), pattern = ".dta") %>% as.list() 
+  
 
-hhinfo <- read_dta(file.path(PHIApath, "Uphia2016hh.dta")) %>%
-  select(householdid, region)
+# Creating a list of all datasets for use
+uphia <- purrr::map(uphia_dtas, ~read_dta(file.path(PHIApath, .)))
+uphia <- uphia[-c(6, 7)] # kick out intermediary sampling weights
 
-# load adult bio data for producing prevalance estimates & join in HH info needed for analysis
-adultbio <- read_dta(file.path(PHIApath, "Uphia2016adultbio.dta")) %>%
-  left_join(., hhinfo, by = "householdid")
+# Providing names so we can track which dataset is which
+names(uphia) <- as.list(c("adultbio", "adultind", "childbio", "childind", "hhchar")) %>% set_names()
 
-adultchar <- read_dta(file.path(PHIApath, "Uphia2016adultind.dta"))
+names(uphia)
 
-hhchar <- read_dta(file.path(PHIApath, "Uphia2016hh.dta"))
 
 
 # Function setup ----------------------------------------------------------
@@ -74,23 +74,23 @@ datasource <- c("Source: 2016/17 Uganda Population-Based HIV Impact Survey (UPHI
 
 # Explore data ------------------------------------------------------------
 
-adultbio %>%
+uphia$adultbio %>%
   select(-contains("btwt")) %>%
   names()
 
 # Check the cross-tabulations of the hivstatus variable to figure out filters (99s) needed for stats
-adultbio %>%
+uphia$adultbio %>%
   select(hivstatusfinal) %>%
   mutate(hivstatusfinal = two_to_zero(hivstatusfinal)) %>%
   table()
 
 # Look at the key indicators full information
-adultbio %>%
+uphia$adultbio %>%
   select_at(vars(hivstatusfinal, aware, art, vls)) %>%
   Hmisc::describe()
 
 # What do tabulations look like after modifications to account for 99s
-adultbio %>%
+uphia$adultbio %>%
   select_at(vars(hivstatusfinal, aware, art, vls, activesyphilis)) %>%
   mutate_all(., ~ two_to_zero(.)) %>%
   mutate_all(., ~ nn_to_nas(.)) %>%
@@ -100,7 +100,8 @@ adultbio %>%
 
 # Fix 2s to zero for major variables of interest
 adultbio_svy <-
-  adultbio %>%
+  uphia$adultbio %>%
+  left_join(., uphia$hhchar %>% select(householdid, region), by = c("householdid")) %>% 
   mutate_at(vars(hivstatusfinal, aware, art, vls, activesyphilis), list(recode = two_to_zero)) %>%
   mutate_at(vars(hivstatusfinal, aware, art, vls, activesyphilis), list(nn_to_nas)) %>%
   # generate age categories as you need
@@ -143,6 +144,8 @@ adultbio_svy <-
 
 # Declare data to be survey set
 # Check if any observations are missing weights
+# See page 26 of the PHIA Data use manual on which weight to use.
+# Here we use blood weights as we are dealing with HIV prevalence
 adultbio_svy %>%
   filter(is.na(varunit)) %>%
   count() # 570 missing weights -- not good
@@ -172,7 +175,8 @@ svyby(~hivstatusfinal_recode, ~region_labs, phia_svyset, svymean)
 # See here for the update on srvyr
 # https://cran.r-project.org/web/packages/srvyr/vignettes/srvyr-vs-survey.html
 
-uga_adults <- adultbio_svy %>%
+uga_adults <- 
+  adultbio_svy %>%
   filter(!is.na(varunit) & hiv_miss_flag == 0) %>% # exclude missing weights and flagged hiv
   #filter(!is.na(varunit)) %>% 
   as_survey_design(id = varunit, strata = varstrat, weights = btwt0, nest = TRUE) # declare data svyset
@@ -192,7 +196,8 @@ uga_adults %>%
 
 
 # Look at the prevalence by male / female across large age swaths
-hiv_prev <- uga_adults %>%
+hiv_prev <- 
+  uga_adults %>%
   group_by(agecat, gender, region_labs, age_15_24) %>%
   summarise(
     hvi_prev = survey_mean(hivstatusfinal_recode, vartype = "ci"),
